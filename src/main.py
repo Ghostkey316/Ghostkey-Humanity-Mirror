@@ -7,8 +7,11 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from mirror_log import log_sample, self_audit_template
 from vaultfire import rewards
-from memory_graph import update_graph
+from memory_graph import update_graph, get_memory_graph
 from moral_alignment import evaluate_entry
+from streak_tracker import update_streak
+from signal_engine import emit_signal
+from self_audit import audit_feedback
 from identity.bridge import generate_belief_certificate
 from identity.exporter import export_certificate
 
@@ -23,13 +26,18 @@ def get_user_input():
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         with open("mirror_log/log_sample.md", "a") as f:
             f.write(f"\n## {timestamp}\n{entry}\n")
-        update_graph(entry)
+        node = update_graph(entry)
         evaluate_entry(entry)
         rewards.calculate(entry)
+        streak_info = update_streak(traits=node["traits"])
+        graph = get_memory_graph()
+        prev_node = graph[-2] if len(graph) > 1 else None
+        emit_signal(node, streak_info, prev_node)
 
     elif choice == "2":
-        with open("mirror_log/self_audit_template.md", "r") as f:
-            print(f.read())
+        feedback = audit_feedback(get_memory_graph())
+        for msg in feedback:
+            print(msg)
     else:
         print("Goodbye.")
 
