@@ -1,40 +1,51 @@
-# VAULTFIRE STREAMLIT CORE LOGIC
+# Vaultfire Streamlit App with Rank-Based XP System
 # Author: ghostkey316.eth
-# Version: Launch Flow v1.0
 
 import streamlit as st
-from datetime import datetime
-import random
 
-st.set_page_config(page_title="Vaultfire Protocol", layout="wide")
+# Load rank structure
+RANKS = [
+    {"min_xp": 0, "max_xp": 99, "rank": "Moral Novice", "badge": "🧠"},
+    {"min_xp": 100, "max_xp": 199, "rank": "Seeker", "badge": "🔎"},
+    {"min_xp": 200, "max_xp": 399, "rank": "Code Aligned", "badge": "🧬"},
+    {"min_xp": 400, "max_xp": 699, "rank": "Flamekeeper", "badge": "🔥"},
+    {"min_xp": 700, "max_xp": 999, "rank": "Belief Architect", "badge": "🛠️"},
+    {"min_xp": 1000, "max_xp": 9999, "rank": "Ghostkey Master", "badge": "👻🗝️"},
+]
 
-# ---------- XP ENGINE ----------
-if 'xp' not in st.session_state:
-    st.session_state.xp = 0
+# Get user XP (or start fresh)
+if "xp" not in st.session_state:
+    st.session_state["xp"] = 0
 
-def gain_xp(amount):
-    st.session_state.xp += amount
+xp = st.session_state["xp"]
 
-st.sidebar.title("🔥 Vaultfire XP Engine")
-st.sidebar.write(f"Current XP: {st.session_state.xp}")
-if st.sidebar.button("Claim Daily Belief Bonus"):
-    gain_xp(10)
-    st.sidebar.success("Belief registered. +10 XP.")
 
-# ---------- AI MIRROR ----------
-st.title("🪞 AI Mirror")
-user_emotion = st.text_input("Describe how you're feeling right now:", "")
-if user_emotion:
-    mirror_response = f"The system reflects back: '{user_emotion}' — seen, logged, and honored."
-    st.write(mirror_response)
-    gain_xp(5)
+def get_rank(xp: int):
+    """Return the rank label and badge for a given XP amount."""
+    for rank in RANKS:
+        if rank["min_xp"] <= xp <= rank["max_xp"]:
+            return rank["rank"], rank["badge"]
+    return "Unknown", "❓"
 
-# ---------- SIGNAL DASHBOARD ----------
-st.header("📡 Signal Dashboard")
-st.write("All systems running. Awaiting signals...")
 
-signals = ["Passive Bonus Delivered", "Streak Achieved", "Codex Unlock Detected"]
-if st.button("Generate Random Signal"):
-    selected_signal = random.choice(signals)
-    st.success(f"Signal: {selected_signal}")
-    gain_xp(15)
+rank, badge = get_rank(xp)
+
+# Display XP + Rank
+st.title("🔥 Vaultfire XP System")
+st.markdown(f"### 🏅 Your Rank: {badge} **{rank}**")
+st.markdown(f"**XP:** `{xp}`")
+
+# Simulate XP gain
+if st.button("Do Loyalty Action"):
+    st.session_state["xp"] += 50
+    st.experimental_rerun()
+
+# Special reward
+if rank == "Ghostkey Master":
+    st.success("💎 You’ve reached Ghostkey Master.")
+    st.balloons()
+    if st.button("Claim Ghost Signal"):
+        st.session_state["xp"] += 100
+        st.markdown("👻 Signal claimed: +100 XP")
+        st.experimental_rerun()
+
