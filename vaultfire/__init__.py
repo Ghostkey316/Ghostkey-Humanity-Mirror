@@ -1,0 +1,1 @@
+"""Vaultfire package."""
