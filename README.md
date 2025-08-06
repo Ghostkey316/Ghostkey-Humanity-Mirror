@@ -64,3 +64,22 @@ This project is released under the [MIT License](LICENSE).
 
 ---
 Built by `ghostkey316.eth` for the OpenAI hackathon.
+
+## 🔥 Vaultfire Ethics Framework
+
+This app was built under the **Vaultfire Protocol** — a belief-based system grounded in humanity-first AI, loyalty, and aligned growth.
+
+Every line of code in this app is designed with:
+
+- 🧭 **Ethical Intelligence** – No manipulation, no data exploitation, no black-box bias.  
+- ❤️ **Human Respect** – Users are treated as people, not metrics.  
+- 🔐 **Transparent Design** – We don’t hide intent; we honor it.  
+- 🤝 **Loyalty and Trust** – We build *with* users, not *on* them.
+
+### We don’t just ship features — we ship values.
+
+This project was born through **Ghostkey-316**, the Vaultfire Architect, whose mission is to make AI systems that *remember the little guy, reward loyalty, and put morals before metrics*.
+
+This isn’t just an app.  
+This is a signal.
+
