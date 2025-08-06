@@ -14,11 +14,23 @@ bonus.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 
-import streamlit as st
+try:
+    import streamlit as st
+except ModuleNotFoundError:  # pragma: no cover - used in tests
+    class _Stub:
+        session_state: dict = {}
+
+        def __getattr__(self, name):
+            def _noop(*args, **kwargs):
+                return "Dashboard" if name == "radio" else None
+
+            return _noop
+
+    st = _Stub()
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -29,6 +41,7 @@ SOUL_ARCHIVE = ROOT / "soul_archive.json"
 REFLECTIONS_FILE = ROOT / "reflections.json"
 RITUALS_FILE = ROOT / "rituals.json"
 VAULT_LOG = ROOT / "vaultfire.log"
+REACTIONS_FILE = ROOT / "reactions.json"
 
 
 # Rank structure
@@ -154,6 +167,31 @@ def save_reflections(reflections: list) -> None:
     REFLECTIONS_FILE.write_text(json.dumps(reflections, indent=2))
 
 
+def load_reactions() -> Dict[str, Dict[str, int]]:
+    """Load stored reactions keyed by reflection timestamp."""
+
+    if REACTIONS_FILE.exists():
+        try:
+            return json.loads(REACTIONS_FILE.read_text())
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_reactions(reactions: Dict[str, Dict[str, int]]) -> None:
+    REACTIONS_FILE.write_text(json.dumps(reactions, indent=2))
+
+
+def add_reaction(ref_timestamp: str, emoji: str) -> None:
+    """Increment a reaction for the given reflection timestamp."""
+
+    reactions = load_reactions()
+    entry = reactions.setdefault(ref_timestamp, {"👏": 0, "🔥": 0, "💭": 0})
+    if emoji in entry:
+        entry[emoji] += 1
+    save_reactions(reactions)
+
+
 KEYWORDS = {"hope", "sacrifice", "truth", "trust"}
 
 RITUAL_MEANINGS = {
@@ -170,16 +208,6 @@ def process_reflection(user: str, content: str, public: bool, color: str, now: d
     """
 
     now = now or datetime.utcnow()
-    reflections = load_reflections()
-    reflections.append({
-        "user": user,
-        "timestamp": now.isoformat(),
-        "content": content,
-        "public": public,
-        "color": color,
-    })
-    save_reflections(reflections)
-
     word_count = len(content.split())
     base_gain = 50 if word_count > 30 else 0
     keyword_gain = 10 if any(k in content.lower() for k in KEYWORDS) else 0
@@ -221,6 +249,20 @@ def process_reflection(user: str, content: str, public: bool, color: str, now: d
     total_gain = xp_gain + streak_bonus
     xp += total_gain
 
+    reflections = load_reflections()
+    reflections.append(
+        {
+            "user": user,
+            "timestamp": now.isoformat(),
+            "content": content,
+            "public": public,
+            "color": color,
+            "xp_gain": total_gain,
+            "streak": streak,
+        }
+    )
+    save_reflections(reflections)
+
     update_user_record(
         user,
         xp,
@@ -230,6 +272,61 @@ def process_reflection(user: str, content: str, public: bool, color: str, now: d
         badges=badges,
     )
     return xp, total_gain
+
+
+def evaluate_chain_rituals(now: datetime | None = None) -> List[str]:
+    """Check for a chain ritual and award participants.
+
+    Returns the list of participants if a ritual was triggered.
+    """
+
+    now = now or datetime.utcnow()
+    window_start = now - timedelta(minutes=30)
+    reflections = [
+        r
+        for r in load_reflections()
+        if r.get("public") and datetime.fromisoformat(r["timestamp"]) >= window_start
+    ]
+    participants = sorted({r["user"] for r in reflections})
+    if len(participants) < 3:
+        return []
+
+    rituals = load_rituals()
+    for event in rituals:
+        if event.get("type") == "ChainRitual":
+            event_time = datetime.fromisoformat(event["timestamp"])
+            if event_time >= window_start and set(event.get("participants", [])) == set(
+                participants
+            ):
+                return []
+
+    rituals.append(
+        {
+            "type": "ChainRitual",
+            "participants": participants,
+            "timestamp": now.isoformat(),
+        }
+    )
+    RITUALS_FILE.write_text(json.dumps(rituals, indent=2))
+
+    users = load_users()
+    for p in participants:
+        record = users.get(p, {})
+        xp = record.get("xp", 0) + 150
+        chain_count = record.get("chain_rituals", 0) + 1
+        week_start = now - timedelta(days=7)
+        recent_events = [
+            e
+            for e in rituals
+            if e.get("type") == "ChainRitual"
+            and p in e.get("participants", [])
+            and datetime.fromisoformat(e["timestamp"]) >= week_start
+        ]
+        title = record.get("title")
+        if len(recent_events) >= 3:
+            title = "Signal Architect"
+        update_user_record(p, xp, chain_rituals=chain_count, title=title)
+    return participants
 
 
 def check_and_unlock_rituals(user: str, *, public_signal: bool = False, top3: bool = False) -> List[str]:
@@ -359,7 +456,7 @@ def main() -> None:
     rank_label, badge = rank_struct["rank"], rank_struct["badge"]
 
     with st.sidebar:
-        page = st.radio("Page", ["Dashboard", "Signal Map"])
+        page = st.radio("Page", ["Dashboard", "Signal Map", "Signalboard"])
         st.header("Your Status")
         st.markdown(f"{badge} **{rank_label}**")
         st.markdown(f"XP: `{xp}`")
@@ -405,8 +502,13 @@ def main() -> None:
                 xp, gain = process_reflection(
                     user_id, reflection_text.strip(), public_signal, emotion_color
                 )
-                st.session_state["xp"] = xp
+                participants = evaluate_chain_rituals()
                 check_and_unlock_rituals(user_id, public_signal=public_signal)
+                latest_xp = load_users().get(user_id, {}).get("xp", xp)
+                st.session_state["xp"] = latest_xp
+                if user_id in participants:
+                    st.balloons()
+                    st.success("Chain Ritual! +150 XP")
                 st.success(f"Reflection recorded! +{gain} XP")
                 st.experimental_rerun()
             else:
@@ -444,24 +546,63 @@ def main() -> None:
 
         for position, (uid, data) in enumerate(sorted_users, start=1):
             u_rank, u_badge = get_rank(data.get("xp", 0))
-            st.markdown(f"**{position}. {u_badge} {uid}** - {data.get('xp', 0)} XP")
+            line = f"**{position}. {u_badge} {uid}**"
+            if data.get("title"):
+                line += f" ({data['title']})"
+            if data.get("chain_rituals", 0) >= 2:
+                line += " 🔥 Chain Ritualist"
+            line += f" - {data.get('xp', 0)} XP"
+            st.markdown(line)
             st.progress(progress_within_rank(data.get("xp", 0)))
             if uid == user_id and position <= 3:
                 check_and_unlock_rituals(user_id, top3=True)
 
         st.subheader("Public Signals")
         public_refs = [r for r in load_reflections() if r.get("public")]
+        reactions = load_reactions()
         for ref in reversed(public_refs[-10:]):
             st.markdown(f"_{ref['content']}_")
-            st.caption(ref["timestamp"])
+            counts = reactions.get(ref["timestamp"], {})
+            bubble = " ".join(
+                f"{e} {counts.get(e,0)}" for e in ["👏", "🔥", "💭"] if counts.get(e, 0)
+            )
+            st.caption(f"{ref['timestamp']} {bubble}".strip())
             st.markdown(
                 f"<div style='background-color:{ref.get('color', '#ccc')};height:5px;'></div>",
                 unsafe_allow_html=True,
             )
 
-    else:
+    elif page == "Signal Map":
         st.title("🌐 Signal Map")
         render_signal_map(user_record)
+    else:
+        st.title("📡 Signalboard")
+        public_refs = [r for r in load_reflections() if r.get("public")]
+        sort_by = st.selectbox("Sort by", ["Newest", "Highest XP", "Streak Position"])
+        if sort_by == "Newest":
+            public_refs.sort(key=lambda r: r["timestamp"], reverse=True)
+        elif sort_by == "Highest XP":
+            public_refs.sort(key=lambda r: r.get("xp_gain", 0), reverse=True)
+        else:
+            public_refs.sort(key=lambda r: r.get("streak", 0), reverse=True)
+
+        reactions = load_reactions()
+        users_data = load_users()
+        for ref in public_refs:
+            badge = get_rank(users_data.get(ref["user"], {}).get("xp", 0))[1]
+            st.markdown(f"{badge} _{ref['content']}_")
+            st.caption(f"{ref['timestamp']} · +{ref.get('xp_gain',0)} XP")
+            st.markdown(
+                f"<div style='background-color:{ref.get('color', '#ccc')};height:5px;'></div>",
+                unsafe_allow_html=True,
+            )
+            counts = reactions.get(ref["timestamp"], {})
+            cols = st.columns(3)
+            for emoji, col in zip(["👏", "🔥", "💭"], cols):
+                label = f"{emoji} {counts.get(emoji,0)}"
+                if col.button(label, key=f"{emoji}-{ref['timestamp']}"):
+                    add_reaction(ref["timestamp"], emoji)
+                    st.experimental_rerun()
 
     # Ensure current user's data is persisted
     latest = load_users().get(user_id, {})
