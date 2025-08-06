@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.env
+users.json
+soul_archive.json
+vaultfire.log
+.streamlit/
