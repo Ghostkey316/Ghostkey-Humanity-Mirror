@@ -2,4 +2,3 @@
 
 def initialize_vaultfire():
     print("🔥 Vaultfire Protocol activated.")
-
