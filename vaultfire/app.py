@@ -13,10 +13,10 @@ bonus.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict
+from .utils import utcnow, read_json, write_json
 
 try:
     import streamlit as st
@@ -35,7 +35,7 @@ except ModuleNotFoundError:  # pragma: no cover - used in tests
 # ---------------------------------------------------------------------------
 # Configuration
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 USERS_FILE = ROOT / "users.json"
 SOUL_ARCHIVE = ROOT / "soul_archive.json"
 REFLECTIONS_FILE = ROOT / "reflections.json"
@@ -61,16 +61,11 @@ RANKS = [
 def load_users() -> dict:
     """Return the persisted user table."""
 
-    if USERS_FILE.exists():
-        try:
-            return json.loads(USERS_FILE.read_text())
-        except json.JSONDecodeError:
-            return {}
-    return {}
+    return read_json(USERS_FILE, {})
 
 
 def save_users(users: dict) -> None:
-    USERS_FILE.write_text(json.dumps(users, indent=2))
+    write_json(USERS_FILE, users)
 
 
 def get_rank(xp: int) -> tuple[str, str]:
@@ -115,7 +110,7 @@ def update_user_record(user: str, xp: int, **updates) -> None:
     record.update({
         "xp": xp,
         "rank": rank_label,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utcnow().isoformat(),
     })
     record.update(updates)
     users[user] = record
@@ -125,23 +120,13 @@ def update_user_record(user: str, xp: int, **updates) -> None:
 def load_reflections() -> list:
     """Return the list of stored reflections."""
 
-    if REFLECTIONS_FILE.exists():
-        try:
-            return json.loads(REFLECTIONS_FILE.read_text())
-        except json.JSONDecodeError:
-            return []
-    return []
+    return read_json(REFLECTIONS_FILE, [])
 
 
 def load_rituals() -> List[dict]:
     """Return the list of stored ritual unlocks."""
 
-    if RITUALS_FILE.exists():
-        try:
-            return json.loads(RITUALS_FILE.read_text())
-        except json.JSONDecodeError:
-            return []
-    return []
+    return read_json(RITUALS_FILE, [])
 
 
 def log_ritual(user: str, ritual: str) -> None:
@@ -151,35 +136,30 @@ def log_ritual(user: str, ritual: str) -> None:
     rituals.append({
         "user": user,
         "ritual": ritual,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utcnow().isoformat(),
     })
-    RITUALS_FILE.write_text(json.dumps(rituals, indent=2))
+    write_json(RITUALS_FILE, rituals)
 
 
 def log_vault_reveal(user: str) -> None:
     """Record a vault reveal in ``vaultfire.log``."""
 
     with VAULT_LOG.open("a") as fh:
-        fh.write(f"{datetime.utcnow().isoformat()} - {user} revealed the vault\n")
+        fh.write(f"{utcnow().isoformat()} - {user} revealed the vault\n")
 
 
 def save_reflections(reflections: list) -> None:
-    REFLECTIONS_FILE.write_text(json.dumps(reflections, indent=2))
+    write_json(REFLECTIONS_FILE, reflections)
 
 
 def load_reactions() -> Dict[str, Dict[str, int]]:
     """Load stored reactions keyed by reflection timestamp."""
 
-    if REACTIONS_FILE.exists():
-        try:
-            return json.loads(REACTIONS_FILE.read_text())
-        except json.JSONDecodeError:
-            return {}
-    return {}
+    return read_json(REACTIONS_FILE, {})
 
 
 def save_reactions(reactions: Dict[str, Dict[str, int]]) -> None:
-    REACTIONS_FILE.write_text(json.dumps(reactions, indent=2))
+    write_json(REACTIONS_FILE, reactions)
 
 
 def add_reaction(ref_timestamp: str, emoji: str) -> None:
@@ -207,7 +187,10 @@ def process_reflection(user: str, content: str, public: bool, color: str, now: d
     Returns the user's new XP total and the XP gained from this reflection.
     """
 
-    now = now or datetime.utcnow()
+    # `now` is injected for tests; default to an aware UTC timestamp
+    now = now or utcnow()
+    # XP is awarded for sufficiently long reflections and for using
+    # certain keywords that indicate depth of thought.
     word_count = len(content.split())
     base_gain = 50 if word_count > 30 else 0
     keyword_gain = 10 if any(k in content.lower() for k in KEYWORDS) else 0
@@ -224,16 +207,16 @@ def process_reflection(user: str, content: str, public: bool, color: str, now: d
     if last_date_str:
         last_date = datetime.fromisoformat(last_date_str).date()
         if last_date == today:
-            pass
+            pass  # already reflected today
         elif (today - last_date).days == 1:
             streak += 1
-            streak_bonus = 25
+            streak_bonus = 25  # reward continuing streaks
         else:
             streak = 1
-            streak_bonus = 25
+            streak_bonus = 25  # reset streak but still reward the day
     else:
         streak = 1
-        streak_bonus = 25
+        streak_bonus = 25  # first ever reflection
 
     dates = record.get("reflection_dates", [])
     today_iso = today.isoformat()
@@ -280,7 +263,8 @@ def evaluate_chain_rituals(now: datetime | None = None) -> List[str]:
     Returns the list of participants if a ritual was triggered.
     """
 
-    now = now or datetime.utcnow()
+    # Use an aware timestamp to avoid naive/aware warnings
+    now = now or utcnow()
     window_start = now - timedelta(minutes=30)
     reflections = [
         r
@@ -295,6 +279,7 @@ def evaluate_chain_rituals(now: datetime | None = None) -> List[str]:
     for event in rituals:
         if event.get("type") == "ChainRitual":
             event_time = datetime.fromisoformat(event["timestamp"])
+            # avoid double-counting the same participant set within the window
             if event_time >= window_start and set(event.get("participants", [])) == set(
                 participants
             ):
@@ -307,7 +292,7 @@ def evaluate_chain_rituals(now: datetime | None = None) -> List[str]:
             "timestamp": now.isoformat(),
         }
     )
-    RITUALS_FILE.write_text(json.dumps(rituals, indent=2))
+    write_json(RITUALS_FILE, rituals)
 
     users = load_users()
     for p in participants:
@@ -324,7 +309,7 @@ def evaluate_chain_rituals(now: datetime | None = None) -> List[str]:
         ]
         title = record.get("title")
         if len(recent_events) >= 3:
-            title = "Signal Architect"
+            title = "Signal Architect"  # title after three chains in a week
         update_user_record(p, xp, chain_rituals=chain_count, title=title)
     return participants
 
@@ -344,6 +329,7 @@ def check_and_unlock_rituals(user: str, *, public_signal: bool = False, top3: bo
 
     def unlock(name: str):
         if name not in rituals:
+            # persist the ritual, celebrate, and show its meaning
             rituals.append(name)
             unlocked.append(name)
             log_ritual(user, name)
@@ -378,18 +364,13 @@ def check_and_unlock_rituals(user: str, *, public_signal: bool = False, top3: bo
 def log_role_claim(user: str, rank_label: str) -> None:
     """Append the role claim to ``soul_archive.json``."""
 
-    archive = []
-    if SOUL_ARCHIVE.exists():
-        try:
-            archive = json.loads(SOUL_ARCHIVE.read_text())
-        except json.JSONDecodeError:
-            archive = []
+    archive = read_json(SOUL_ARCHIVE, [])
     archive.append({
         "user": user,
         "rank": rank_label,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utcnow().isoformat(),
     })
-    SOUL_ARCHIVE.write_text(json.dumps(archive, indent=2))
+    write_json(SOUL_ARCHIVE, archive)
 
 
 def render_signal_map(record: dict) -> None:

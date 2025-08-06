@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import json
-import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +27,7 @@ def setup_files(tmp_path, monkeypatch):
 
 def test_chain_ritual_awards_xp(tmp_path, monkeypatch):
     setup_files(tmp_path, monkeypatch)
-    base = datetime(2024, 1, 1, 12, 0, 0)
+    base = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     text = "hope " * 31
     vf.process_reflection("u1", text, True, "#111", now=base)
     vf.process_reflection("u2", text, True, "#222", now=base + timedelta(minutes=10))
@@ -45,7 +45,7 @@ def test_chain_ritual_awards_xp(tmp_path, monkeypatch):
 
 def test_chain_ritual_respects_window(tmp_path, monkeypatch):
     setup_files(tmp_path, monkeypatch)
-    base = datetime(2024, 1, 1, 12, 0, 0)
+    base = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     text = "hope " * 31
     vf.process_reflection("u1", text, True, "#111", now=base)
     vf.process_reflection("u2", text, True, "#222", now=base + timedelta(minutes=10))
@@ -60,7 +60,7 @@ def test_chain_ritual_respects_window(tmp_path, monkeypatch):
 
 def test_reactions_stored(tmp_path, monkeypatch):
     setup_files(tmp_path, monkeypatch)
-    base = datetime(2024, 1, 1, 12, 0, 0)
+    base = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     vf.process_reflection("u1", "hope " * 31, True, "#111", now=base)
     reflections = json.loads((tmp_path / "reflections.json").read_text())
     ts = reflections[0]["timestamp"]

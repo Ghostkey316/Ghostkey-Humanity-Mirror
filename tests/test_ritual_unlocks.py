@@ -1,5 +1,6 @@
 import json
-from datetime import datetime, timedelta
+import json
+from datetime import datetime, timedelta, timezone
 import sys
 from pathlib import Path
 
@@ -26,7 +27,7 @@ def setup_files(tmp_path, monkeypatch):
 def test_ritual_of_fire_unlock(tmp_path, monkeypatch):
     setup_files(tmp_path, monkeypatch)
     user = "alice"
-    start = datetime(2024, 1, 1)
+    start = datetime(2024, 1, 1, tzinfo=timezone.utc)
     for i in range(7):
         vf.process_reflection(
             user,
@@ -45,7 +46,9 @@ def test_ritual_of_fire_unlock(tmp_path, monkeypatch):
 def test_eyes_opened_unlock(tmp_path, monkeypatch):
     setup_files(tmp_path, monkeypatch)
     user = "bob"
-    vf.process_reflection(user, "test reflection", True, "#fff", now=datetime(2024, 1, 1))
+    vf.process_reflection(
+        user, "test reflection", True, "#fff", now=datetime(2024, 1, 1, tzinfo=timezone.utc)
+    )
     vf.check_and_unlock_rituals(user, public_signal=True)
     rituals = json.loads(vf.RITUALS_FILE.read_text())
     assert any(r["ritual"] == "Eyes Opened" for r in rituals)
